@@ -28,16 +28,26 @@ const JUDGE0_HEADERS = {
   'X-RapidAPI-Key': process.env.JUDGE0_API_KEY || ''
 };
 
-// Wait for result with polling
+// Poll for Judge0 result
 async function pollSubmission(token) {
   const url = `${JUDGE0_URL}/${token}?base64_encoded=false`;
-  for (let i = 0; i < 30; i++) { // max 30 polls (~30s)
+  for (let i = 0; i < 30; i++) { // max ~30s
     const resp = await axios.get(url, { headers: JUDGE0_HEADERS });
     const result = resp.data;
-    if (result.status.id >= 3) return result; // 3 = Accepted, >=3 = finished
+    if (result.status.id >= 3) return result; // 3 = Accepted
     await new Promise(r => setTimeout(r, 1000));
   }
   throw new Error('Judge0 request timed out');
+}
+
+// Improved normalization — same as Docker helper
+function normalizeOutput(str) {
+  return (str || '')
+    .replace(/\r\n/g, '\n')                     // Normalize Windows newlines
+    .split('\n')                                // Split lines
+    .map(line => line.trimEnd())                // Remove trailing spaces per line
+    .join('\n')                                 // Join back
+    .trimEnd();                                 // Remove final newline/spaces
 }
 
 export async function executeCode(code, language, tests, timeLimit = 2, memoryLimit = 300) {
@@ -53,7 +63,7 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
     for (let i = 0; i < tests.length; i++) {
       const test = tests[i];
 
-      // Submit code asynchronously
+      // Submit to Judge0
       const payload = {
         language_id: languageMap[language],
         source_code: code,
@@ -69,7 +79,7 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
       const token = submitResp.data.token;
       const result = await pollSubmission(token);
 
-      // Check for errors
+      // Handle errors (CE, RE, TLE, MLE)
       if (result.status.id !== 3) {
         let errorType = 'Runtime Error';
         if (result.status.id === 6) errorType = 'Compilation Error';
@@ -80,23 +90,34 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
           isError: true,
           errorType,
           message: result.stderr || result.compile_output || result.status.description,
-          result: { input: test.input, expected: test.expected, output: result.stdout || '' }
+          failingTest: {
+            input: test.input,
+            expected: normalizeOutput(test.expected),
+            output: normalizeOutput(result.stdout || '')
+          }
         };
       }
 
-      // Compare output
-      const normalize = s => (s || '').replace(/\r\n/g, '\n').trim();
-      if (normalize(result.stdout) !== normalize(test.expected)) {
+      // Compare normalized outputs
+      const produced = normalizeOutput(result.stdout);
+      const expected = normalizeOutput(test.expected);
+
+      if (produced !== expected) {
         return {
           isError: true,
           errorType: 'Wrong Answer',
           message: 'Output did not match expected result',
-          result: { input: test.input, expected: test.expected, output: result.stdout }
+          failingTest: {
+            input: test.input,
+            expected,
+            output: produced
+          }
         };
       }
     }
 
     return { isError: false, message: 'All test cases passed successfully' };
+
   } catch (err) {
     return {
       isError: true,
