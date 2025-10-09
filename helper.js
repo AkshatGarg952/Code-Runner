@@ -120,3 +120,29 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
     };
   }
 }
+
+export async function executeSingleTest(code, language, input, expected, timeLimit = 2, memoryLimit = 300) {
+  if (!languageMap[language]) throw new Error(`Unsupported language: ${language}`);
+
+  const payload = {
+    language_id: languageMap[language],
+    source_code: code,
+    stdin: input,
+    cpu_time_limit: timeLimit,
+    memory_limit: memoryLimit * 1024
+  };
+
+  const submitResp = await axios.post(`${JUDGE0_URL}?base64_encoded=false`, payload, { headers: JUDGE0_HEADERS });
+  const token = submitResp.data.token;
+
+  const result = await pollSubmission(token);
+
+  if (result.status.id !== 3) return false;
+
+  const produced = normalizeOutput(result.stdout);
+  const expectedNorm = normalizeOutput(expected);
+
+  return produced === expectedNorm;
+}
+
+
