@@ -1,6 +1,6 @@
-// helper.js
 import axios from 'axios';
 
+// Get test cases
 export function getTestcases(problem, includeHidden = false) {
   let testcases = problem.examples || problem.sampleTests || [];
   if (includeHidden && problem.hiddenTests) {
@@ -13,14 +13,14 @@ export function getTestcases(problem, includeHidden = false) {
   }));
 }
 
-// Map languages to Judge0 language IDs
+// Map languages to Judge0 IDs
 const languageMap = {
   cpp: 54,       // C++17
   python: 71,    // Python 3
   java: 62       // Java OpenJDK 17
 };
 
-// Judge0 CE API endpoint
+// Judge0 CE API
 const JUDGE0_URL = 'https://judge0-ce.p.rapidapi.com/submissions';
 const JUDGE0_HEADERS = {
   'content-type': 'application/json',
@@ -28,7 +28,7 @@ const JUDGE0_HEADERS = {
   'X-RapidAPI-Key': process.env.JUDGE0_API_KEY || ''
 };
 
-// Poll for Judge0 result
+// Poll Judge0 for result
 async function pollSubmission(token) {
   const url = `${JUDGE0_URL}/${token}?base64_encoded=false`;
   for (let i = 0; i < 30; i++) { // max ~30s
@@ -40,16 +40,17 @@ async function pollSubmission(token) {
   throw new Error('Judge0 request timed out');
 }
 
-// Improved normalization — same as Docker helper
+// Normalize output for comparison
 function normalizeOutput(str) {
   return (str || '')
-    .replace(/\r\n/g, '\n')                     // Normalize Windows newlines
-    .split('\n')                                // Split lines
-    .map(line => line.trimEnd())                // Remove trailing spaces per line
-    .join('\n')                                 // Join back
-    .trimEnd();                                 // Remove final newline/spaces
+    .replace(/\r\n/g, '\n')  // Windows -> Unix newlines
+    .split('\n')
+    .map(line => line.trimEnd())
+    .join('\n')
+    .trimEnd();
 }
 
+// Execute code for multiple test cases
 export async function executeCode(code, language, tests, timeLimit = 2, memoryLimit = 300) {
   if (!languageMap[language]) {
     return {
@@ -79,7 +80,7 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
       const token = submitResp.data.token;
       const result = await pollSubmission(token);
 
-      // Handle errors (CE, RE, TLE, MLE)
+      // Handle errors
       if (result.status.id !== 3) {
         let errorType = 'Runtime Error';
         if (result.status.id === 6) errorType = 'Compilation Error';
@@ -90,15 +91,11 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
           isError: true,
           errorType,
           message: result.stderr || result.compile_output || result.status.description,
-          failingTest: {
-            input: test.input,
-            expected: normalizeOutput(test.expected),
-            output: normalizeOutput(result.stdout || '')
-          }
+          result: { input: test.input }  // ✅ Only first failing test input
         };
       }
 
-      // Compare normalized outputs
+      // Compare output
       const produced = normalizeOutput(result.stdout);
       const expected = normalizeOutput(test.expected);
 
@@ -107,15 +104,12 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
           isError: true,
           errorType: 'Wrong Answer',
           message: 'Output did not match expected result',
-          failingTest: {
-            input: test.input,
-            expected,
-            output: produced
-          }
+          result: { input: test.input }  // ✅ Only first failing test input
         };
       }
     }
 
+    // ✅ All passed
     return { isError: false, message: 'All test cases passed successfully' };
 
   } catch (err) {
