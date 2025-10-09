@@ -64,7 +64,6 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
     for (let i = 0; i < tests.length; i++) {
       const test = tests[i];
 
-      // Submit to Judge0
       const payload = {
         language_id: languageMap[language],
         source_code: code,
@@ -73,14 +72,23 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
         memory_limit: memoryLimit * 1024 // KB
       };
 
-      const submitResp = await axios.post(`${JUDGE0_URL}?base64_encoded=false`, payload, {
-        headers: JUDGE0_HEADERS
-      });
+      let submitResp;
+      try {
+        submitResp = await axios.post(`${JUDGE0_URL}?base64_encoded=false`, payload, { headers: JUDGE0_HEADERS });
+      } catch (axiosErr) {
+        // Handle HTTP or Axios errors properly
+        return {
+          isError: true,
+          errorType: 'System Error',
+          message: axiosErr.response?.data?.message || axiosErr.message,
+          result: { input: test.input }
+        };
+      }
 
       const token = submitResp.data.token;
       const result = await pollSubmission(token);
 
-      // Handle errors
+      // Handle Judge0 errors
       if (result.status.id !== 3) {
         let errorType = 'Runtime Error';
         if (result.status.id === 6) errorType = 'Compilation Error';
@@ -90,12 +98,12 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
         return {
           isError: true,
           errorType,
-          message: result.stderr || result.compile_output || result.status.description,
-          result: { input: test.input }  // ✅ Only first failing test input
+          message: result.compile_output || result.stderr || result.status.description,
+          result: { input: test.input, expected: test.expected, output: result.stdout || '' }
         };
       }
 
-      // Compare output
+      // Compare outputs for Wrong Answer
       const produced = normalizeOutput(result.stdout);
       const expected = normalizeOutput(test.expected);
 
@@ -104,12 +112,11 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
           isError: true,
           errorType: 'Wrong Answer',
           message: 'Output did not match expected result',
-          result: { input: test.input }  // ✅ Only first failing test input
+          result: { input: test.input, expected, output: produced }
         };
       }
     }
 
-    // ✅ All passed
     return { isError: false, message: 'All test cases passed successfully' };
 
   } catch (err) {
