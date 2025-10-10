@@ -110,7 +110,7 @@ app.post('/run-all', async (req, res) => {
 
 app.post('/run-custom-tests', async (req, res) => {
   const { code, language, testcases, timeLimit, memoryLimit } = req.body;
-
+  console.log(req.body)
   if (!code || !language || !Array.isArray(testcases)) {
     return res.status(400).json({ error: 'Missing code/language/testcases' });
   }
@@ -127,6 +127,7 @@ app.post('/run-custom-tests', async (req, res) => {
 
 const PORT = process.env.PORT || 9000;
 app.listen(PORT, () => console.log(`Runner listening on ${PORT}`));
+
 
 
 
