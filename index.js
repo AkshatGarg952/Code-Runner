@@ -7,7 +7,7 @@ app.use(express.json({ limit: '2mb' }));
 // /run endpoint
 app.post('/run', async (req, res) => {
   let { code, language, problem } = req.body;
-
+  console.log('run', body)
   if (!code || !language || !problem) {
     return res.status(400).json({ error: 'Missing code/language/problem' });
   }
@@ -42,7 +42,7 @@ app.post('/run', async (req, res) => {
 // /submit endpoint (same logic, includes hidden test cases)
 app.post('/submit', async (req, res) => {
   let { code, language, problem } = req.body;
-
+  console.log('submit', body)
   if (!code || !language || !problem) {
     return res.status(400).json({ error: 'Missing code/language/problem' });
   }
@@ -75,6 +75,7 @@ app.post('/submit', async (req, res) => {
 });
 
 app.post('/run-all', async (req, res) => {
+  console.log('run-all', body)
   const { code, language, problem } = req.body;
 
   if (!code || !language || !problem) {
@@ -109,8 +110,8 @@ app.post('/run-all', async (req, res) => {
 });
 
 app.post('/run-custom-tests', async (req, res) => {
+  console.log('run-custom-tests', body)
   const { code, language, testcases, timeLimit, memoryLimit } = req.body;
-  console.log(req.body)
   if (!code || !language || !Array.isArray(testcases)) {
     return res.status(400).json({ error: 'Missing code/language/testcases' });
   }
@@ -127,6 +128,7 @@ app.post('/run-custom-tests', async (req, res) => {
 
 const PORT = process.env.PORT || 9000;
 app.listen(PORT, () => console.log(`Runner listening on ${PORT}`));
+
 
 
 
