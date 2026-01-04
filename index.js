@@ -1,20 +1,49 @@
 import express from 'express';
-import { getTestcases, executeCode, executeSingleTest, executeCustomTests} from './helper.js';
+import cors from 'cors';
+import morgan from 'morgan';
+import rateLimit from 'express-rate-limit';
+import { config } from './config.js';
+import { getTestcases, executeCode, executeSingleTest, executeCustomTests } from './helper.js';
+import { validateRunRequest, validateCustomTestRequest } from './middleware/validator.js';
 
 const app = express();
+
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || '*',
+  credentials: true
+}));
+
+app.use(morgan(config.nodeEnv === 'development' ? 'dev' : 'combined'));
+
+const limiter = rateLimit({
+  windowMs: config.rateLimit.windowMs,
+  max: config.rateLimit.maxRequests,
+  message: {
+    success: false,
+    error: 'Too many requests, please try again later.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use(limiter);
 app.use(express.json({ limit: '2mb' }));
 
-// /run endpoint
-app.post('/run', async (req, res) => {
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
+app.post('/run', validateRunRequest, async (req, res) => {
   let { code, language, problem } = req.body;
-  console.log('run', req.body)
-  if (!code || !language || !problem) {
-    return res.status(400).json({ error: 'Missing code/language/problem' });
-  }
+  console.log('run', { language, problemId: problem.id || 'unknown' });
 
   const testcases = getTestcases(problem, false);
-  const timeLimit = problem.timeLimit;
-  const memoryLimit = problem.memoryLimit;
+  const timeLimit = problem.timeLimit || 2;
+  const memoryLimit = problem.memoryLimit || 256000;
 
   try {
     const execResult = await executeCode(code, language, testcases, timeLimit, memoryLimit);
@@ -39,17 +68,13 @@ app.post('/run', async (req, res) => {
   }
 });
 
-// /submit endpoint (same logic, includes hidden test cases)
-app.post('/submit', async (req, res) => {
+app.post('/submit', validateRunRequest, async (req, res) => {
   let { code, language, problem } = req.body;
-  console.log('submit', req.body)
-  if (!code || !language || !problem) {
-    return res.status(400).json({ error: 'Missing code/language/problem' });
-  }
+  console.log('submit', { language, problemId: problem.id || 'unknown' });
 
   const testcases = getTestcases(problem, true);
-  const timeLimit = problem.timeLimit;
-  const memoryLimit = problem.memoryLimit;
+  const timeLimit = problem.timeLimit || 2;
+  const memoryLimit = problem.memoryLimit || 256000;
 
   try {
     const execResult = await executeCode(code, language, testcases, timeLimit, memoryLimit);
@@ -74,28 +99,21 @@ app.post('/submit', async (req, res) => {
   }
 });
 
-app.post('/run-all', async (req, res) => {
-  console.log('run-all', req.body)
+app.post('/run-all', validateRunRequest, async (req, res) => {
+  console.log('run-all', { language: req.body.language, problemId: req.body.problem.id || 'unknown' });
   const { code, language, problem } = req.body;
 
-  if (!code || !language || !problem) {
-    return res.status(400).json({ error: 'Missing code/language/problem' });
-  }
-
   const testcases = getTestcases(problem, true);
-  const timeLimit = problem.timeLimit;
-  const memoryLimit = problem.memoryLimit;
+  const timeLimit = problem.timeLimit || 2;
+  const memoryLimit = problem.memoryLimit || 256000;
 
   try {
-    // Create an array of promises for all test cases
     const testPromises = testcases.map(test =>
       executeSingleTest(code, language, test.input, test.expected, timeLimit, memoryLimit)
     );
 
-    // Wait for all to complete
     const results = await Promise.all(testPromises);
 
-    // Count passed test cases
     const passedCount = results.filter(r => r === true).length;
 
     res.json({
@@ -109,12 +127,9 @@ app.post('/run-all', async (req, res) => {
   }
 });
 
-app.post('/run-custom-tests', async (req, res) => {
-  console.log('run-custom-tests', req.body)
-  const { code, language, testcases, timeLimit, memoryLimit } = req.body;
-  if (!code || !language || !Array.isArray(testcases)) {
-    return res.status(400).json({ error: 'Missing code/language/testcases' });
-  }
+app.post('/run-custom-tests', validateCustomTestRequest, async (req, res) => {
+  console.log('run-custom-tests', { language: req.body.language, testCount: req.body.testcases?.length || 0 });
+  const { code, language, testcases, timeLimit = 2, memoryLimit = 256000 } = req.body;
 
   try {
     const results = await executeCustomTests(code, language, testcases, timeLimit, memoryLimit);
@@ -126,11 +141,8 @@ app.post('/run-custom-tests', async (req, res) => {
 });
 
 
-const PORT = process.env.PORT || 9000;
-app.listen(PORT, () => console.log(`Runner listening on ${PORT}`));
-
-
-
-
-
-
+app.listen(config.port, () => {
+  console.log(`🚀 Code Runner listening on port ${config.port}`);
+  console.log(`📊 Environment: ${config.nodeEnv}`);
+  console.log(`⏱️  Rate limit: ${config.rateLimit.maxRequests} requests per ${config.rateLimit.windowMs / 1000}s`);
+});

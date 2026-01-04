@@ -1,6 +1,6 @@
 import axios from 'axios';
+import { config } from './config.js';
 
-// Get test cases
 export function getTestcases(problem, includeHidden = false) {
   let testcases = problem.examples || problem.sampleTests || [];
   if (includeHidden && problem.hiddenTests) {
@@ -13,45 +13,46 @@ export function getTestcases(problem, includeHidden = false) {
   }));
 }
 
-// Map languages to Judge0 IDs
 const languageMap = {
-  cpp: 54,       // C++17
-  python: 71,    // Python 3
-  java: 62       // Java OpenJDK 17
+  cpp: 54,         // C++17
+  python: 71,      // Python 3
+  java: 62,        // Java OpenJDK 17
+  javascript: 63,  // JavaScript (Node.js)
+  c: 50,           // C (GCC)
+  csharp: 51,      // C# (Mono)
+  ruby: 72,        // Ruby
+  go: 60,          // Go
+  rust: 73         // Rust
 };
 
-// Judge0 CE API
-const JUDGE0_URL = 'https://judge0-ce.p.rapidapi.com/submissions';
+const JUDGE0_URL = config.judge0.apiUrl;
 const JUDGE0_HEADERS = {
   'content-type': 'application/json',
   'X-RapidAPI-Host': 'judge0-ce.p.rapidapi.com',
-  'X-RapidAPI-Key': process.env.JUDGE0_API_KEY || ''
+  'X-RapidAPI-Key': config.judge0.apiKey
 };
 
-// Poll Judge0 for result
 async function pollSubmission(token) {
   const url = `${JUDGE0_URL}/${token}?base64_encoded=false`;
-  for (let i = 0; i < 30; i++) { // max ~30s
+  for (let i = 0; i < 30; i++) {
     const resp = await axios.get(url, { headers: JUDGE0_HEADERS });
     const result = resp.data;
-    if (result.status.id >= 3) return result; // 3 = Accepted
+    if (result.status.id >= 3) return result;
     await new Promise(r => setTimeout(r, 1000));
   }
   throw new Error('Judge0 request timed out');
 }
 
-// Normalize output for comparison
 function normalizeOutput(str) {
   return (str || '')
-    .replace(/\r\n/g, '\n')  // Windows -> Unix newlines
+    .replace(/\r\n/g, '\n')
     .split('\n')
     .map(line => line.trimEnd())
     .join('\n')
     .trimEnd();
 }
 
-// Execute code for multiple test cases
-export async function executeCode(code, language, tests, timeLimit = 2, memoryLimit = 300) {
+export async function executeCode(code, language, tests, timeLimit = 2, memoryLimit = 256000) {
   if (!languageMap[language]) {
     return {
       isError: true,
@@ -64,13 +65,12 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
     for (let i = 0; i < tests.length; i++) {
       const test = tests[i];
 
-      // Submit to Judge0
       const payload = {
         language_id: languageMap[language],
         source_code: code,
         stdin: test.input,
         cpu_time_limit: timeLimit,
-        memory_limit: memoryLimit * 1024 // KB
+        memory_limit: memoryLimit
       };
 
       const submitResp = await axios.post(`${JUDGE0_URL}?base64_encoded=false`, payload, {
@@ -80,22 +80,55 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
       const token = submitResp.data.token;
       const result = await pollSubmission(token);
 
-      // Handle errors
       if (result.status.id !== 3) {
         let errorType = 'Runtime Error';
-        if (result.status.id === 6) errorType = 'Compilation Error';
-        if (result.status.id === 5) errorType = 'Time Limit Exceeded';
-        if (result.status.id === 7) errorType = 'Memory Limit Exceeded';
+        let errorMessage = result.stderr || result.compile_output || result.status.description;
+
+        switch (result.status.id) {
+          case 4:
+            errorType = 'Wrong Answer';
+            errorMessage = 'Output did not match expected result';
+            break;
+          case 5:
+            errorType = 'Time Limit Exceeded';
+            errorMessage = `Execution time exceeded ${timeLimit}s limit`;
+            break;
+          case 6:
+            errorType = 'Compilation Error';
+            break;
+          case 7:
+          case 8:
+          case 9:
+          case 10:
+            errorType = 'Memory Limit Exceeded';
+            errorMessage = `Memory usage exceeded ${memoryLimit}KB limit`;
+            break;
+          case 11:
+            errorType = 'Runtime Error (SIGSEGV)';
+            errorMessage = 'Segmentation fault - Invalid memory access';
+            break;
+          case 12:
+            errorType = 'Runtime Error (SIGXFSZ)';
+            errorMessage = 'Output size limit exceeded';
+            break;
+          case 13:
+            errorType = 'Runtime Error (SIGFPE)';
+            errorMessage = 'Floating point exception (division by zero)';
+            break;
+          case 14:
+            errorType = 'Runtime Error (SIGABRT)';
+            errorMessage = 'Program aborted';
+            break;
+        }
 
         return {
           isError: true,
           errorType,
-          message: result.stderr || result.compile_output || result.status.description,
-          result: { input: test.input }  // ✅ Only first failing test input
+          message: errorMessage,
+          result: { input: test.input }
         };
       }
 
-      // Compare output
       const produced = normalizeOutput(result.stdout);
       const expected = normalizeOutput(test.expected);
 
@@ -104,12 +137,11 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
           isError: true,
           errorType: 'Wrong Answer',
           message: 'Output did not match expected result',
-          result: { input: test.input }  // ✅ Only first failing test input
+          result: { input: test.input }
         };
       }
     }
 
-    // ✅ All passed
     return { isError: false, message: 'All test cases passed successfully' };
 
   } catch (err) {
@@ -121,7 +153,7 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
   }
 }
 
-export async function executeSingleTest(code, language, input, expected, timeLimit = 2, memoryLimit = 300) {
+export async function executeSingleTest(code, language, input, expected, timeLimit = 2, memoryLimit = 256000) {
   if (!languageMap[language]) throw new Error(`Unsupported language: ${language}`);
 
   const payload = {
@@ -129,7 +161,7 @@ export async function executeSingleTest(code, language, input, expected, timeLim
     source_code: code,
     stdin: input,
     cpu_time_limit: timeLimit,
-    memory_limit: memoryLimit * 1024
+    memory_limit: memoryLimit
   };
 
   const submitResp = await axios.post(`${JUDGE0_URL}?base64_encoded=false`, payload, { headers: JUDGE0_HEADERS });
@@ -145,7 +177,7 @@ export async function executeSingleTest(code, language, input, expected, timeLim
   return produced === expectedNorm;
 }
 
-export async function executeCustomTests(code, language, testcases, timeLimit = 2, memoryLimit = 300) {
+export async function executeCustomTests(code, language, testcases, timeLimit = 2, memoryLimit = 256000) {
   if (!languageMap[language]) {
     throw new Error(`Unsupported language: ${language}`);
   }
@@ -159,7 +191,7 @@ export async function executeCustomTests(code, language, testcases, timeLimit = 
         source_code: code,
         stdin: input,
         cpu_time_limit: timeLimit,
-        memory_limit: memoryLimit * 1024 // MB → KB
+        memory_limit: memoryLimit
       };
 
       const submitResp = await axios.post(`${JUDGE0_URL}?base64_encoded=false`, payload, {
@@ -189,7 +221,3 @@ export async function executeCustomTests(code, language, testcases, timeLimit = 
     throw new Error(`Judge0 execution failed: ${err.message}`);
   }
 }
-
-
-
-

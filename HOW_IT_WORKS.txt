@@ -1,0 +1,323 @@
+================================================================================
+                    CODE-RUNNER: HOW IT WORKS
+================================================================================
+
+📌 WHAT IS CODE-RUNNER?
+------------------------
+Code-Runner is a web service that lets you execute code in 9 different 
+programming languages safely and get results. Think of it as a "code executor 
+as a service."
+
+
+🔄 THE FLOW (Step-by-Step)
+---------------------------
+
+1. USER SENDS CODE
+   - You send a POST request to the server with:
+     * Your code (e.g., Python, C++, Java, etc.)
+     * The programming language
+     * Test cases (input/output pairs)
+
+2. SERVER RECEIVES & VALIDATES
+   - index.js receives your request
+   - Validation middleware checks:
+     ✓ Is the code present?
+     ✓ Is the language supported?
+     ✓ Are test cases valid?
+   - If invalid → Returns error immediately
+
+3. SECURITY CHECKS
+   - Rate limiter checks: "Have you made too many requests?"
+   - CORS checks: "Are you allowed to access this API?"
+   - If failed → Returns error
+
+4. CODE SENT TO JUDGE0
+   - helper.js takes your code
+   - Sends it to Judge0 API (external service on RapidAPI)
+   - Judge0 runs your code in a secure sandbox
+   - Waits for result (polls every 1 second, max 30 seconds)
+
+5. JUDGE0 EXECUTES CODE
+   - Runs your code with the test input
+   - Captures the output
+   - Checks for errors (compilation, runtime, timeout, etc.)
+
+6. COMPARE RESULTS
+   - helper.js compares actual output vs expected output
+   - Normalizes whitespace/newlines for fair comparison
+   - If match → Test passed ✓
+   - If no match → Test failed ✗
+
+7. RETURN RESPONSE
+   - Server sends back result:
+     * Success: "All test cases passed!"
+     * Error: Details about what went wrong
+
+
+🏗️ ARCHITECTURE
+----------------
+
+┌─────────────┐
+│   Client    │  (You send HTTP request)
+└──────┬──────┘
+       │
+       ▼
+┌─────────────────────────────────────────┐
+│         Express Server (index.js)        │
+│  ┌────────────────────────────────────┐ │
+│  │  1. CORS Middleware                │ │
+│  │  2. Rate Limiter                   │ │
+│  │  3. Request Logger (Morgan)        │ │
+│  │  4. Body Parser                    │ │
+│  │  5. Validation Middleware          │ │
+│  └────────────────────────────────────┘ │
+└──────┬──────────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────────┐
+│       Helper Functions (helper.js)      │
+│  - executeCode()                        │
+│  - executeSingleTest()                  │
+│  - executeCustomTests()                 │
+└──────┬──────────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────────┐
+│         Judge0 API (RapidAPI)           │
+│  - Receives code + language ID          │
+│  - Executes in secure sandbox           │
+│  - Returns output/errors                │
+└─────────────────────────────────────────┘
+
+
+📁 FILE STRUCTURE
+-----------------
+
+index.js
+  └─> Main server file
+  └─> Defines all API endpoints (/run, /submit, /health, etc.)
+  └─> Sets up middleware (CORS, rate limiting, logging)
+
+helper.js
+  └─> Contains code execution logic
+  └─> Communicates with Judge0 API
+  └─> Handles error mapping and output comparison
+
+config.js
+  └─> Loads environment variables
+  └─> Validates required configuration
+  └─> Exports settings (port, API keys, limits)
+
+middleware/validator.js
+  └─> Validates incoming requests
+  └─> Checks language support
+  └─> Ensures required fields are present
+
+.env
+  └─> Stores sensitive configuration
+  └─> API keys, URLs, rate limits
+
+
+🛣️ API ENDPOINTS
+-----------------
+
+1. GET /health
+   → Check if server is running
+   → Returns: status, timestamp, uptime
+
+2. POST /run
+   → Run code against sample test cases
+   → Returns: pass/fail with details
+
+3. POST /submit
+   → Run code against all test cases (including hidden)
+   → Returns: pass/fail with details
+
+4. POST /run-all
+   → Run all tests and get statistics
+   → Returns: total tests, passed count
+
+5. POST /run-custom-tests
+   → Run code with your own test inputs
+   → Returns: output for each input
+
+
+🔐 SECURITY FEATURES
+--------------------
+
+✓ Rate Limiting
+  - Prevents abuse (default: 100 requests/minute)
+  - Configurable via environment variables
+
+✓ Input Validation
+  - All requests validated before processing
+  - Prevents malformed data from reaching Judge0
+
+✓ CORS Protection
+  - Controls which websites can access the API
+  - Configurable allowed origins
+
+✓ Request Logging
+  - All requests logged for monitoring
+  - Helps debug issues
+
+✓ Sandboxed Execution
+  - Code runs in Judge0's isolated environment
+  - Cannot access your server or data
+
+
+🌐 SUPPORTED LANGUAGES (9 Total)
+---------------------------------
+
+1. Python 3
+2. C++ (C++17)
+3. Java (OpenJDK 17)
+4. JavaScript (Node.js)
+5. C (GCC)
+6. C# (Mono)
+7. Ruby
+8. Go
+9. Rust
+
+
+⚙️ HOW JUDGE0 WORKS
+-------------------
+
+Judge0 is a separate service that:
+  1. Receives your code and language ID
+  2. Compiles it (if needed)
+  3. Runs it in a Docker container (isolated)
+  4. Sets time and memory limits
+  5. Captures output and errors
+  6. Returns everything back to your server
+
+You're using Judge0 via RapidAPI (hosted version).
+
+
+🔄 ERROR HANDLING
+-----------------
+
+The system handles these errors:
+
+✗ Compilation Error
+  → Your code has syntax errors
+
+✗ Runtime Error
+  → Code crashes while running (e.g., division by zero)
+
+✗ Time Limit Exceeded
+  → Code took too long to execute
+
+✗ Memory Limit Exceeded
+  → Code used too much memory
+
+✗ Wrong Answer
+  → Output doesn't match expected result
+
+✗ System Error
+  → Problem with Judge0 or network
+
+
+📊 EXAMPLE REQUEST/RESPONSE
+----------------------------
+
+REQUEST:
+POST http://localhost:9000/run
+{
+  "code": "print('Hello')",
+  "language": "python",
+  "problem": {
+    "examples": [
+      {"input": "", "output": "Hello"}
+    ]
+  }
+}
+
+RESPONSE (Success):
+{
+  "isError": false,
+  "message": "All test cases passed successfully"
+}
+
+RESPONSE (Error):
+{
+  "isError": true,
+  "errorType": "Wrong Answer",
+  "message": "Output did not match expected result",
+  "result": {"input": ""}
+}
+
+
+💡 KEY CONCEPTS
+---------------
+
+1. Polling
+   - After sending code to Judge0, we check status every 1 second
+   - Max wait: 30 seconds
+   - Prevents hanging if Judge0 is slow
+
+2. Output Normalization
+   - Removes extra spaces/newlines before comparing
+   - Makes comparison fair (ignores formatting differences)
+
+3. Language Mapping
+   - Each language has a Judge0 ID (e.g., Python = 71)
+   - helper.js maps language names to IDs
+
+4. Test Cases
+   - Sample tests: Visible to user, for quick validation
+   - Hidden tests: Only for final submission, ensures correctness
+
+
+🚀 QUICK START
+--------------
+
+1. Install dependencies:
+   npm install
+
+2. Add Judge0 API key to .env:
+   JUDGE0_API_KEY=your_key_here
+
+3. Start server:
+   npm start
+
+4. Test it:
+   curl http://localhost:9000/health
+
+
+📝 CONFIGURATION (.env file)
+-----------------------------
+
+PORT=9000
+  → Server runs on this port
+
+JUDGE0_API_KEY=xxx
+  → Your RapidAPI key for Judge0
+
+JUDGE0_API_URL=https://judge0-ce.p.rapidapi.com/submissions
+  → Judge0 API endpoint
+
+RATE_LIMIT_WINDOW_MS=60000
+  → Rate limit time window (60 seconds)
+
+RATE_LIMIT_MAX_REQUESTS=100
+  → Max requests per window
+
+
+🎯 SUMMARY
+----------
+
+Code-Runner is a middleware service that:
+  ✓ Accepts code from users
+  ✓ Validates and secures requests
+  ✓ Sends code to Judge0 for execution
+  ✓ Compares results with expected output
+  ✓ Returns pass/fail response
+
+It's like a bridge between your application and Judge0, adding security,
+validation, and convenience features.
+
+
+================================================================================
+                            END OF DOCUMENT
+================================================================================
