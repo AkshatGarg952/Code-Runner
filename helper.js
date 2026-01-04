@@ -221,3 +221,24 @@ export async function executeCustomTests(code, language, testcases, timeLimit = 
     throw new Error(`Judge0 execution failed: ${err.message}`);
   }
 }
+
+export async function executeAllTests(code, language, tests, timeLimit = 2, memoryLimit = 256000) {
+  if (!languageMap[language]) {
+    throw new Error(`Unsupported language: ${language}`);
+  }
+
+  let passed = 0;
+  
+  // proces tests sequentially to avoid overwhelming Judge0
+  for (const test of tests) {
+    try {
+      const isSuccess = await executeSingleTest(code, language, test.input, test.expected, timeLimit, memoryLimit);
+      if (isSuccess) passed++;
+    } catch (err) {
+      console.error(`Test execution failed: ${err.message}`);
+      // Continue to next test case even if one fails
+    }
+  }
+
+  return passed;
+}
