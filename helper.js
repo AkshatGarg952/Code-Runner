@@ -62,6 +62,13 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
   }
 
   try {
+    const executionStats = {
+      totalTests: tests.length,
+      passedTests: 0,
+      executionTimes: [],
+      memoryUsages: []
+    };
+
     for (let i = 0; i < tests.length; i++) {
       const test = tests[i];
 
@@ -73,16 +80,34 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
         memory_limit: memoryLimit
       };
 
-      const submitResp = await axios.post(`${JUDGE0_URL}?base64_encoded=false`, payload, {
-        headers: JUDGE0_HEADERS
-      });
+      let submitResp;
+      try {
+        submitResp = await axios.post(`${JUDGE0_URL}?base64_encoded=false`, payload, {
+          headers: JUDGE0_HEADERS
+        });
+      } catch (axiosError) {
+        console.error('Judge0 API Error:', {
+          status: axiosError.response?.status,
+          statusText: axiosError.response?.statusText,
+          data: axiosError.response?.data,
+          payload: payload
+        });
+        throw new Error(`Judge0 API Error (${axiosError.response?.status}): ${JSON.stringify(axiosError.response?.data)}`);
+      }
 
       const token = submitResp.data.token;
       const result = await pollSubmission(token);
 
+      const executionTime = result.time ? parseFloat(result.time) : null;
+      const memoryUsed = result.memory ? parseInt(result.memory) : null;
+
+      if (executionTime !== null) executionStats.executionTimes.push(executionTime);
+      if (memoryUsed !== null) executionStats.memoryUsages.push(memoryUsed);
+
       if (result.status.id !== 3) {
         let errorType = 'Runtime Error';
         let errorMessage = result.stderr || result.compile_output || result.status.description;
+        let detailedError = result.stderr || result.compile_output || '';
 
         switch (result.status.id) {
           case 4:
@@ -95,6 +120,7 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
             break;
           case 6:
             errorType = 'Compilation Error';
+            errorMessage = 'Code failed to compile';
             break;
           case 7:
           case 8:
@@ -125,7 +151,17 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
           isError: true,
           errorType,
           message: errorMessage,
-          result: { input: test.input }
+          result: {
+            testCaseNumber: i + 1,
+            totalTests: tests.length,
+            input: test.input,
+            expectedOutput: test.expected,
+            actualOutput: result.stdout ? normalizeOutput(result.stdout) : null,
+            executionTime: executionTime,
+            memoryUsed: memoryUsed,
+            detailedError: detailedError,
+            statusId: result.status.id
+          }
         };
       }
 
@@ -137,12 +173,38 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
           isError: true,
           errorType: 'Wrong Answer',
           message: 'Output did not match expected result',
-          result: { input: test.input }
+          result: {
+            testCaseNumber: i + 1,
+            totalTests: tests.length,
+            input: test.input,
+            expectedOutput: expected,
+            actualOutput: produced,
+            executionTime: executionTime,
+            memoryUsed: memoryUsed
+          }
         };
       }
+
+      executionStats.passedTests++;
     }
 
-    return { isError: false, message: 'All test cases passed successfully' };
+    const avgTime = executionStats.executionTimes.length > 0
+      ? (executionStats.executionTimes.reduce((a, b) => a + b, 0) / executionStats.executionTimes.length).toFixed(3)
+      : null;
+    const maxMemory = executionStats.memoryUsages.length > 0
+      ? Math.max(...executionStats.memoryUsages)
+      : null;
+
+    return {
+      isError: false,
+      message: 'All test cases passed successfully',
+      stats: {
+        totalTests: tests.length,
+        passedTests: executionStats.passedTests,
+        avgTime: avgTime,
+        maxMemory: maxMemory
+      }
+    };
 
   } catch (err) {
     return {
@@ -228,7 +290,7 @@ export async function executeAllTests(code, language, tests, timeLimit = 2, memo
   }
 
   let passed = 0;
-  
+
   // proces tests sequentially to avoid overwhelming Judge0
   for (const test of tests) {
     try {
