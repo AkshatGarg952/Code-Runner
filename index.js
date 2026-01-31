@@ -218,7 +218,7 @@ app.post('/execute', async (req, res) => {
 
 
 app.listen(config.port, () => {
-  console.log(`🚀 Code Runner listening on port ${config.port}`);
-  console.log(`📊 Environment: ${config.nodeEnv}`);
-  console.log(`⏱️  Rate limit: ${config.rateLimit.maxRequests} requests per ${config.rateLimit.windowMs / 1000}s`);
+  console.log(`Code Runner listening on port ${config.port}`);
+  console.log(`Environment: ${config.nodeEnv}`);
+  console.log(`Rate limit: ${config.rateLimit.maxRequests} requests per ${config.rateLimit.windowMs / 1000}s`);
 });
