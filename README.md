@@ -36,7 +36,7 @@ A robust microservice built with Express.js and Judge0 for executing code in mul
 - **C++** (Judge0 ID: 54)
 - **Java** (Judge0 ID: 62)
 
-## 🛣️ API Endpoints
+## API Endpoints
 
 ### 1. Health Check
 
@@ -412,14 +412,14 @@ Code-Runner/
 
 ## Security Considerations
 
-- ✅ **Rate limiting** implemented to prevent abuse (100 requests per minute by default)
-- ✅ **Input validation** via middleware for all endpoints
-- ✅ **CORS** enabled with configurable origins
-- ✅ **Time and memory limits** enforced for code execution
-- ✅ **Sandboxed execution** via Judge0
-- ⚠️ **API Key Security**: Never expose Judge0 API keys in client-side code
-- ⚠️ **Authentication**: Implement authentication for production use
-- ⚠️ **HTTPS**: Use HTTPS in production environments
+- **Rate limiting** implemented to prevent abuse (100 requests per minute by default)
+- **Input validation** via middleware for all endpoints
+- **CORS** enabled with configurable origins
+- **Time and memory limits** enforced for code execution
+- **Sandboxed execution** via Judge0
+- **API Key Security**: Never expose Judge0 API keys in client-side code
+- **Authentication**: Implement authentication for production use
+- **HTTPS**: Use HTTPS in production environments
 
 ## Error Handling
 
@@ -501,4 +501,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-⭐ Star this repository if you find it helpful!
+Star this repository if you find it helpful!
