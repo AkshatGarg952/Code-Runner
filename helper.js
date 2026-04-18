@@ -1,4 +1,6 @@
 import axios from 'axios';
+import http from 'http';
+import https from 'https';
 import { config } from './config.js';
 
 export function getTestcases(problem, includeHidden = false) {
@@ -32,13 +34,25 @@ const JUDGE0_HEADERS = {
   'X-RapidAPI-Key': config.judge0.apiKey
 };
 
+const judge0Client = axios.create({
+  timeout: config.judge0.timeoutMs,
+  httpAgent: new http.Agent({
+    keepAlive: true,
+    maxSockets: config.judge0.maxSockets
+  }),
+  httpsAgent: new https.Agent({
+    keepAlive: true,
+    maxSockets: config.judge0.maxSockets
+  })
+});
+
 async function pollSubmission(token) {
   const url = `${JUDGE0_URL}/${token}?base64_encoded=false`;
-  for (let i = 0; i < 30; i++) {
-    const resp = await axios.get(url, { headers: JUDGE0_HEADERS });
+  for (let i = 0; i < config.judge0.maxPollAttempts; i++) {
+    const resp = await judge0Client.get(url, { headers: JUDGE0_HEADERS });
     const result = resp.data;
     if (result.status.id >= 3) return result;
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, config.judge0.pollIntervalMs));
   }
   throw new Error('Judge0 request timed out');
 }
@@ -82,7 +96,7 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
 
       let submitResp;
       try {
-        submitResp = await axios.post(`${JUDGE0_URL}?base64_encoded=false`, payload, {
+        submitResp = await judge0Client.post(`${JUDGE0_URL}?base64_encoded=false`, payload, {
           headers: JUDGE0_HEADERS
         });
       } catch (axiosError) {
@@ -226,7 +240,7 @@ export async function executeSingleTest(code, language, input, expected, timeLim
     memory_limit: memoryLimit
   };
 
-  const submitResp = await axios.post(`${JUDGE0_URL}?base64_encoded=false`, payload, { headers: JUDGE0_HEADERS });
+  const submitResp = await judge0Client.post(`${JUDGE0_URL}?base64_encoded=false`, payload, { headers: JUDGE0_HEADERS });
   const token = submitResp.data.token;
 
   const result = await pollSubmission(token);
@@ -256,7 +270,7 @@ export async function executeCustomTests(code, language, testcases, timeLimit = 
         memory_limit: memoryLimit
       };
 
-      const submitResp = await axios.post(`${JUDGE0_URL}?base64_encoded=false`, payload, {
+      const submitResp = await judge0Client.post(`${JUDGE0_URL}?base64_encoded=false`, payload, {
         headers: JUDGE0_HEADERS
       });
 

@@ -20,10 +20,19 @@ export const config = {
     judge0: {
         apiKey: process.env.JUDGE0_API_KEY,
         apiUrl: process.env.JUDGE0_API_URL || 'https://judge0-ce.p.rapidapi.com/submissions',
+        timeoutMs: parseInt(process.env.JUDGE0_TIMEOUT_MS) || 15000,
+        pollIntervalMs: parseInt(process.env.JUDGE0_POLL_INTERVAL_MS) || 1000,
+        maxPollAttempts: parseInt(process.env.JUDGE0_MAX_POLL_ATTEMPTS) || 30,
+        maxSockets: parseInt(process.env.JUDGE0_MAX_SOCKETS) || 256,
     },
 
     rateLimit: {
         windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000,
-        maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+        maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 5000,
     },
+
+    execution: {
+        maxConcurrent: parseInt(process.env.MAX_CONCURRENT_EXECUTIONS) || 40,
+        maxQueueSize: parseInt(process.env.MAX_PENDING_EXECUTIONS) || 400,
+    }
 };
