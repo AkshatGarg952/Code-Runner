@@ -28,6 +28,7 @@ const languageMap = {
 };
 
 const JUDGE0_URL = config.judge0.apiUrl;
+const JUDGE0_MAX_CPU_TIME_LIMIT_SECONDS = 20;
 const JUDGE0_HEADERS = {
   'content-type': 'application/json',
   'X-RapidAPI-Host': 'judge0-ce.p.rapidapi.com',
@@ -66,6 +67,28 @@ function normalizeOutput(str) {
     .trimEnd();
 }
 
+function normalizeTimeLimitForJudge0(rawTimeLimit = 2) {
+  const numericTimeLimit = Number(rawTimeLimit);
+
+  if (!Number.isFinite(numericTimeLimit) || numericTimeLimit <= 0) {
+    return 2;
+  }
+
+  let normalizedTimeLimit = numericTimeLimit;
+
+  // Some imported problems store Codeforces-style limits in milliseconds.
+  if (normalizedTimeLimit > JUDGE0_MAX_CPU_TIME_LIMIT_SECONDS && normalizedTimeLimit >= 100) {
+    normalizedTimeLimit = normalizedTimeLimit / 1000;
+  }
+
+  normalizedTimeLimit = Math.min(
+    Math.max(normalizedTimeLimit, 0.5),
+    JUDGE0_MAX_CPU_TIME_LIMIT_SECONDS
+  );
+
+  return Number(normalizedTimeLimit.toFixed(3));
+}
+
 export async function executeCode(code, language, tests, timeLimit = 2, memoryLimit = 256000) {
   if (!languageMap[language]) {
     return {
@@ -76,6 +99,7 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
   }
 
   try {
+    const effectiveTimeLimit = normalizeTimeLimitForJudge0(timeLimit);
     const executionStats = {
       totalTests: tests.length,
       passedTests: 0,
@@ -90,7 +114,7 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
         language_id: languageMap[language],
         source_code: code,
         stdin: test.input,
-        cpu_time_limit: timeLimit,
+        cpu_time_limit: effectiveTimeLimit,
         memory_limit: memoryLimit
       };
 
@@ -130,7 +154,7 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
             break;
           case 5:
             errorType = 'Time Limit Exceeded';
-            errorMessage = `Execution time exceeded ${timeLimit}s limit`;
+            errorMessage = `Execution time exceeded ${effectiveTimeLimit}s limit`;
             break;
           case 6:
             errorType = 'Compilation Error';
@@ -231,12 +255,13 @@ export async function executeCode(code, language, tests, timeLimit = 2, memoryLi
 
 export async function executeSingleTest(code, language, input, expected, timeLimit = 2, memoryLimit = 256000) {
   if (!languageMap[language]) throw new Error(`Unsupported language: ${language}`);
+  const effectiveTimeLimit = normalizeTimeLimitForJudge0(timeLimit);
 
   const payload = {
     language_id: languageMap[language],
     source_code: code,
     stdin: input,
-    cpu_time_limit: timeLimit,
+    cpu_time_limit: effectiveTimeLimit,
     memory_limit: memoryLimit
   };
 
@@ -259,6 +284,7 @@ export async function executeCustomTests(code, language, testcases, timeLimit = 
   }
 
   try {
+    const effectiveTimeLimit = normalizeTimeLimitForJudge0(timeLimit);
     const results = [];
 
     for (const input of testcases) {
@@ -266,7 +292,7 @@ export async function executeCustomTests(code, language, testcases, timeLimit = 
         language_id: languageMap[language],
         source_code: code,
         stdin: input,
-        cpu_time_limit: timeLimit,
+        cpu_time_limit: effectiveTimeLimit,
         memory_limit: memoryLimit
       };
 
@@ -303,12 +329,13 @@ export async function executeAllTests(code, language, tests, timeLimit = 2, memo
     throw new Error(`Unsupported language: ${language}`);
   }
 
+  const effectiveTimeLimit = normalizeTimeLimitForJudge0(timeLimit);
   let passed = 0;
 
   // proces tests sequentially to avoid overwhelming Judge0
   for (const test of tests) {
     try {
-      const isSuccess = await executeSingleTest(code, language, test.input, test.expected, timeLimit, memoryLimit);
+      const isSuccess = await executeSingleTest(code, language, test.input, test.expected, effectiveTimeLimit, memoryLimit);
       if (isSuccess) passed++;
     } catch (err) {
       console.error(`Test execution failed: ${err.message}`);
